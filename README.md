@@ -35,7 +35,9 @@ The [TOOT](https://localhost/iris/csp/toot/TOOT.Web.Button.cls) interface consis
 # IRIS product areas exercised:
 * Vector Embedding Search
 * Loading Data Embeddings with record insert
-* Extending the IRIS Embedding Interfce
+* Extending the IRIS Embedding Interface
+   * HotModel parameter - Keeps transformer model loaded in memory between invocations of encoding record inserts ( approximate 2 to 4 times speedup )
+   * Used Cuda Dockerfile version to run faster insert speed in development 
 * Python in BPL
 * Interop with shell utilities
 
