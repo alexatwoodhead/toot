@@ -65,7 +65,7 @@ Note: The dependencies involved result in a docker large image file ( 8.15GB )
 4) In the main directory on commandline run:
    ```bash
    docker build -t toot .
-   docker run --rm --name toot -d -p 1972:1972 -p 52773:52773 -p 80:80 -p 443:443 toot
+   docker run --rm --name toot -d -p 1972:1972 -p 52773:52773 -p 443:443 toot
    docker exec -u root toot apachectl start
    ```
 The docker appliance will take a long time to build. However the image will start and restart quickly.
