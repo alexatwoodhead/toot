@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="IRIS" version="26">
+<Class name="TOOT.Data.Tune">
+<Super>%Persistent</Super>
+<TimeCreated>67287,62660.403225991</TimeCreated>
+
+<Property name="ArtistOrBand">
+<Type>%String</Type>
+<Parameter name="MAXLEN" value="100"/>
+</Property>
+
+<Property name="Name">
+<Type>%String</Type>
+<Parameter name="MAXLEN" value="220"/>
+</Property>
+
+<Property name="Description">
+<Type>%String</Type>
+<Parameter name="MAXLEN" value="4000"/>
+</Property>
+
+<Property name="VideoUrl">
+<Type>%String</Type>
+<Parameter name="MAXLEN" value="50"/>
+</Property>
+
+<Storage name="Default">
+<Type>%Storage.Persistent</Type>
+<DataLocation>^TOOT.Data.TuneD</DataLocation>
+<DefaultData>TuneDefaultData</DefaultData>
+<IdLocation>^TOOT.Data.TuneD</IdLocation>
+<IndexLocation>^TOOT.Data.TuneI</IndexLocation>
+<StreamLocation>^TOOT.Data.TuneS</StreamLocation>
+<ExtentSize>3</ExtentSize>
+<Data name="TuneDefaultData">
+<Value name="1">
+<Value>%%CLASSNAME</Value>
+</Value>
+<Value name="2">
+<Value>ArtistOrBand</Value>
+</Value>
+<Value name="3">
+<Value>Name</Value>
+</Value>
+<Value name="4">
+<Value>Description</Value>
+</Value>
+<Value name="5">
+<Value>VideoUrl</Value>
+</Value>
+</Data>
+<Property name="%%CLASSNAME">
+<Selectivity>0.0001%</Selectivity>
+<OutlierSelectivity>.999999:</OutlierSelectivity>
+<AverageFieldSize>2</AverageFieldSize>
+</Property>
+<Property name="%%ID">
+<Selectivity>1</Selectivity>
+<AverageFieldSize>3</AverageFieldSize>
+</Property>
+<Property name="ArtistOrBand">
+<Selectivity>33.3333%</Selectivity>
+<AverageFieldSize>10</AverageFieldSize>
+</Property>
+<Property name="Description">
+<Selectivity>0.0001%</Selectivity>
+<OutlierSelectivity>.999999:</OutlierSelectivity>
+<AverageFieldSize>2</AverageFieldSize>
+</Property>
+<Property name="Name">
+<Selectivity>33.3333%</Selectivity>
+<AverageFieldSize>46</AverageFieldSize>
+</Property>
+<SQLMap name="IDKEY">
+<BlockCount>-4</BlockCount>
+</SQLMap>
+</Storage>
+</Class>
+</Export>

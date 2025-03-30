@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="IRIS" version="26">
+<Class name="TOOT.BusinessService">
+<Super>Ens.BusinessService</Super>
+<TimeCreated>67286,21212.287016456</TimeCreated>
+
+<Property name="WorkingDirectory">
+<Type>Ens.DataType.Directory</Type>
+<Private>1</Private>
+<Parameter name="MAXLEN" value="100"/>
+<Parameter name="MINLEN" value="3"/>
+</Property>
+
+<Property name="TransformProcess">
+<Type>Ens.DataType.ConfigName</Type>
+</Property>
+
+<Property name="TransformTimeout">
+<Type>%Integer</Type>
+<InitialExpression>30</InitialExpression>
+</Property>
+
+<Parameter name="SETTINGS">
+<Default>TransformProcess,TransformTimeout</Default>
+</Parameter>
+
+<Method name="SendOpusSync">
+<Description>
+Saves the inbound sound (humm, whistle or singing) file
+Sends message into production for further processing
+Synchronous wait for result ( Blocks on Web Page processing )</Description>
+<FormalSpec><![CDATA[opusStream:%Stream.Object,&pResponse]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+    Set tmpFilePath=..WorkingDirectory_$Job_".webm"
+    Set binfile=##class(%Stream.FileBinary).%New()
+    Do binfile.LinkToFile(tmpFilePath)
+    Do binfile.CopyFrom(opusStream)
+    Do binfile.%Save()
+    Set pRequest=##class(Ens.StringContainer).%New()
+    Set pRequest.StringValue=tmpFilePath
+    Quit ..SendRequestSync(..TransformProcess, pRequest,.pResponse,..TransformTimeout)
+]]></Implementation>
+</Method>
+
+<Method name="OnInit">
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+    // Create working folder in database directory for intermediate sound file processing
+    // Downstream processing reuses this location from passed in full filepath
+    Set ..WorkingDirectory=##class(%File).Construct($system.Util.DataDirectory(),"tune","")
+    If '##class(%File).DirectoryExists(..WorkingDirectory) {
+        // Create on first use if needed
+        // Less setup on install
+        Do ##class(%File).CreateDirectoryChain(..WorkingDirectory)
+    }
+    // Testing availability and possible reduce latency for first usage
+    set tStatement = ##class(%SQL.Statement).%New()
+    Set sql($I(sql))="SELECT TOP 5 tune.ArtistOrBand, tune.Name,"
+    Set sql($I(sql))="VECTOR_COSINE(instrument.NoteListEmbedding, EMBEDDING(?,'toot-v2-config')) As Similarity "
+    Set sql($I(sql))="FROM TOOT_Data.Tune tune,TOOT_Data.Instrument instrument "
+    Set sql($I(sql))="WHERE tune.Id=instrument.TuneId "
+    Set sql($I(sql))="ORDER BY Similarity DESC,ArtistOrBand,Name"
+    set tSC=tStatement.%Prepare(.sql)
+    Quit:$$$ISERR(tSC) tSC
+    Do tStatement.%Execute()
+	Quit $$$OK
+]]></Implementation>
+</Method>
+</Class>
+</Export>

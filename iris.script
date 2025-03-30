@@ -1,0 +1,30 @@
+ZN "%SYS"
+
+// create IRISAPP namespace
+Write !,"Creating TOOT namespace"
+Do $SYSTEM.OBJ.Load("/home/irisowner/dev/App.Installer.cls", "ck")
+Set sc = ##class(App.Installer).setup()
+
+ZN "TOOT"
+
+// Add Embedding before dependent classes can be compiled
+Set embedConf=##class(%Embedding.Config).%New()
+Set embedConf.Name="toot-v2-config"
+Set embedConf.Configuration="{""modelName"": ""toot-v2-config"",""modelPath"":""/opt/hub/toot/"",""tokenizerPath"":""/opt/hub/toot/tokenizer_tune.json"",""HotStart"":1}"
+Set embedConf.EmbeddingClass="TOOT.Data.Embedding2"
+Set embedConf.VectorLength=384
+Set embedConf.Description="an embedding model provided by Alex Woodhead"
+Set tSC=embedConf.%Save()
+
+// import application classes
+Write !,"Import some classes"
+Do ##class(%SYSTEM.OBJ).LoadDir("/home/irisowner/dev/src/XML", "ck")
+
+// Import Encoding data
+// Do ##class(%SYSTEM.OBJ).LoadDir("/home/irisowner/dev/src/Data/", "ck")
+Do ##class(%Global).Import(,"*","/home/irisowner/dev/src/Data/toot_data.gof",7)
+
+// When starting iris with docker run, make sure the production also starts
+Do ##class(Ens.Director).SetAutoStart("TOOT.Production")
+
+Halt

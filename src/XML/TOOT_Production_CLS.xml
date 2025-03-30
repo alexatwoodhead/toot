@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="IRIS" version="26">
+<Class name="TOOT.Production">
+<Super>Ens.Production</Super>
+<TimeCreated>67278,1751.854210069</TimeCreated>
+
+<XData name="ProductionDefinition">
+<Data><![CDATA[
+<Production Name="TOOT.Production" TestingEnabled="true" LogGeneralTraceEvents="true">
+  <Description></Description>
+  <ActorPoolSize>2</ActorPoolSize>
+  <Item Name="TootService" Category="" ClassName="TOOT.BusinessService" PoolSize="0" Enabled="true" Foreground="false" Comment="" LogTraceEvents="false" Schedule="">
+    <Setting Target="Host" Name="TransformProcess">EncodeOpus</Setting>
+  </Item>
+  <Item Name="EncodeOpus" Category="" ClassName="TOOT.EncodeOpus" PoolSize="1" Enabled="true" Foreground="false" Comment="" LogTraceEvents="false" Schedule="">
+  </Item>
+</Production>
+]]></Data>
+</XData>
+</Class>
+</Export>

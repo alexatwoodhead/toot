@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="IRIS" version="26">
+<Class name="TOOT.Web.FindTune">
+<Super>%CSP.Page</Super>
+<TimeCreated>67285,14894.03963799</TimeCreated>
+
+<Parameter name="TransformService">
+<Default>TootService</Default>
+</Parameter>
+
+<Parameter name="TransformTimeout">
+<Default>30</Default>
+</Parameter>
+
+<Method name="OnPage">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+    if $IsObject(%request.Content) {
+
+        try {
+            Set tSC=##class(Ens.Director).CreateBusinessService(..#TransformService, .pBusinessService)
+        } catch {
+            S tSC=$$$ERROR(5001,"oops")
+        }
+        If $$$ISERR(tSC) {
+            write ({
+             "error": ("CreateBusinessService "_..#TransformService),
+             "detail": ($System.Status.GetOneErrorText(tSC)),
+            "resolve": "Ensure production is running"
+            }.%ToJSON())
+            return $$$OK
+        }
+
+        #dim pResponse as Ens.StringResponse
+        try {
+            Set tSC=pBusinessService.SendOpusSync(%request.Content,.pResponse)
+        } catch err {
+            Set tSC=$$$ERROR(5001,err.AsStatus())
+        }
+        If $$$ISERR(tSC) {
+            write ({
+             "error": ("Request SendOpusSync to "_..#TransformService),
+             "detail": ($System.Status.GetOneErrorText(tSC)),
+            "resolve": ""}.%ToJSON())
+            return $$$OK
+        }
+        
+        set outputTunes=[]
+        if $L(pResponse.StringValue,",")>3 {
+            set tStatement=##class(%SQL.Statement).%New()
+            set tSC=tStatement.%PrepareClassQuery("TOOT.Web.FindTune","FindTune2")
+            set tResult=tStatement.%Execute("[CLS],"_pResponse.StringValue_",SEP")
+            set status=##class(Ens.Util.PyByRef).%New()
+        
+            while tResult.%Next() {
+                Set outputTune={"artistOrBand":(tResult.%Get("Artist")),
+                                "name":(tResult.%Get("Name")),
+                                "similarity":(tResult.%Get("Similarity"))}
+                do outputTunes.add(outputTune)
+            }
+        }
+
+        Set output={
+            "success":true,
+            "encoding":(pResponse.StringValue)
+            }
+        Set output."tunes"=outputTunes
+        Write output.%ToJSON()
+        return $$$OK
+
+    } else {
+        W {"error":"No input"}.%ToJSON()
+    }
+
+    return $$$OK
+]]></Implementation>
+</Method>
+
+<Query name="FindTune2">
+<Type>%SQLQuery</Type>
+<FormalSpec>notes1:%String</FormalSpec>
+<SqlName>FindTune2</SqlName>
+<SqlProc>1</SqlProc>
+<SqlQuery>    SELECT TOP 5 tune.ArtistOrBand, tune.Name,
+        VECTOR_COSINE(instrument.NoteListEmbedding, EMBEDDING(:notes1,'toot-v2-config')) As Similarity
+            FROM TOOT_Data.Tune tune,TOOT_Data.Instrument instrument
+            WHERE tune.Id=instrument.TuneId
+            ORDER BY Similarity DESC,ArtistOrBand,Name</SqlQuery>
+<Parameter name="CONTAINID" value="0"/>
+<Parameter name="ROWSPEC" value="Artist:%String,Name:%String,Similarity"/>
+</Query>
+</Class>
+</Export>

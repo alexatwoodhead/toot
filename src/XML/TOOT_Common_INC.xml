@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="IRIS" version="26">
+<Routine name="TOOT.Common" type="INC"><![CDATA[
+
+///
+#define NoteShortNoChangeTK   96
+///
+#define NoteLongNoChangeTK    97
+///
+#define NoteSpacerLT        "|_|"
+///
+#define NoteMinTK       6
+///
+#define NoteMaxTK       187  
+///
+#define NoteStartLT   "[CLS]"
+///
+#define NoteStopLt    "[SEP]"
+]]></Routine>
+</Export>

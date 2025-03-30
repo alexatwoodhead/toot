@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="IRIS" version="26">
+<Class name="TOOT.Data.Instrument">
+<Description><![CDATA[
+Ref: https://docs.intersystems.com/irislatest/csp/docbook/DocBook.UI.Page.cls?KEY=GSQL_vecsearch
+The model config needs to be added to the system before this class can be compiled
+<example>
+INSERT INTO %Embedding.Config (Name, Configuration, EmbeddingClass, VectorLength, Description)
+ VALUES ('toot-v2-config', 
+         '{"modelName": "toot-v2",
+           "modelPath":"/durable/models/toot/",
+           "HotStart":1}',
+           'TOOT.Data.Embedding',
+           384,  
+           'an embedding model provided by Alex Woodhead')  
+</example>]]></Description>
+<Super>%Persistent</Super>
+<TimeCreated>67287,63232.613568292</TimeCreated>
+
+<Property name="TuneId">
+<Type>%Integer</Type>
+</Property>
+
+<Property name="TrackRef">
+<Type>%Integer</Type>
+</Property>
+
+<Property name="Name">
+<Type>%String</Type>
+<Parameter name="MAXLEN" value="100"/>
+<Parameter name="TRUNCATE" value="1"/>
+</Property>
+
+<Property name="NoteList">
+<Type>%String</Type>
+<Parameter name="MAXLEN" value="8000"/>
+<Parameter name="TRUNCATE" value="1"/>
+</Property>
+
+<Property name="OffsetList">
+<Type>%String</Type>
+<Parameter name="MAXLEN" value="24000"/>
+<Parameter name="TRUNCATE" value="1"/>
+</Property>
+
+<Property name="NoteListEmbedding">
+<Type>%Embedding</Type>
+<Parameter name="MODEL" value="toot-v2-config"/>
+<Parameter name="SOURCE" value="NoteList"/>
+</Property>
+
+<Storage name="Default">
+<Type>%Storage.Persistent</Type>
+<DataLocation>^TOOT.Data.InstrumentD</DataLocation>
+<DefaultData>InstrumentDefaultData</DefaultData>
+<IdLocation>^TOOT.Data.InstrumentD</IdLocation>
+<IndexLocation>^TOOT.Data.InstrumentI</IndexLocation>
+<StreamLocation>^TOOT.Data.InstrumentS</StreamLocation>
+<ExtentSize>7</ExtentSize>
+<Data name="InstrumentDefaultData">
+<Value name="1">
+<Value>%%CLASSNAME</Value>
+</Value>
+<Value name="2">
+<Value>TuneId</Value>
+</Value>
+<Value name="3">
+<Value>TrackRef</Value>
+</Value>
+<Value name="4">
+<Value>Name</Value>
+</Value>
+<Value name="5">
+<Value>NoteList</Value>
+</Value>
+<Value name="6">
+<Value>OffsetList</Value>
+</Value>
+<Value name="7">
+<Value>NoteListEmbedding</Value>
+</Value>
+</Data>
+<Property name="%%CLASSNAME">
+<Selectivity>0.0001%</Selectivity>
+<OutlierSelectivity>.999999:</OutlierSelectivity>
+<AverageFieldSize>2</AverageFieldSize>
+</Property>
+<Property name="%%ID">
+<Selectivity>1</Selectivity>
+<AverageFieldSize>3</AverageFieldSize>
+</Property>
+<Property name="Name">
+<Selectivity>33.3333%</Selectivity>
+<AverageFieldSize>62</AverageFieldSize>
+</Property>
+<Property name="NoteList">
+<Selectivity>33.3333%</Selectivity>
+<AverageFieldSize>1250.86</AverageFieldSize>
+</Property>
+<Property name="NoteListEmbedding">
+<Selectivity>1</Selectivity>
+<AverageFieldSize>4420</AverageFieldSize>
+</Property>
+<Property name="OffsetList">
+<Selectivity>33.3333%</Selectivity>
+<AverageFieldSize>2472.29</AverageFieldSize>
+</Property>
+<Property name="TrackRef">
+<Selectivity>33.3333%</Selectivity>
+<AverageFieldSize>3</AverageFieldSize>
+</Property>
+<Property name="TuneId">
+<Selectivity>33.3333%</Selectivity>
+<AverageFieldSize>3</AverageFieldSize>
+</Property>
+<SQLMap name="IDKEY">
+<BlockCount>-48</BlockCount>
+</SQLMap>
+</Storage>
+</Class>
+</Export>

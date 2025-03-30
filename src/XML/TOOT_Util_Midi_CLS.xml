@@ -1,0 +1,1061 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="IRIS" version="26">
+<Class name="TOOT.Util.Midi">
+<Description>
+Implemented by Alex Woodhead 2025 for TOOT demo</Description>
+<IncludeCode>TOOT.Common</IncludeCode>
+<Super>%RegisteredObject</Super>
+<TimeCreated>67280,17672.179690493</TimeCreated>
+
+<Method name="ConvertMidiBinDirToCsv">
+<Description><![CDATA[
+Advantage of using python language method directly for this process
+is to mitigate the 4MB IRIS string limit
+in value returned by "midi_to_csv"
+<example>
+Set dirpathIn="/durable/midi"
+Set dirpathOut="/durable/midi_Out"
+set status=##class(Ens.Util.PyByRef).%New()
+set numErrors=0
+Do ##class(TOOT.Util.Midi).ConvertMidiBinDirToCsv(dirpathIn,dirpathOut,status,.numErrors)
+</example>]]></Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[dirpathIn:%String,dirpathOut:%String,status:Ens.Util.PyByRef,&numErrors=0]]></FormalSpec>
+<Implementation><![CDATA[
+    set tStatement=##class(%SQL.Statement).%New()
+    set tSC=tStatement.%PrepareClassQuery("%Library.File","FileSet")
+    set tResult=tStatement.%Execute(dirpathIn,"*.mid",,1)
+    set status=##class(Ens.Util.PyByRef).%New()
+    while tResult.%Next() {
+        set status.value=""
+        if "D"=tResult.%Get("Type") {
+            Do ..ConvertMidiBinDirToCsv(tResult.%Get("Name"),dirpathOut,status,numErrors)
+            continue
+        }
+        if '..ConvertMidiBinToCsv(tResult.%Get("Name"),dirpathOut,status) {
+            W !,"Error ",$I(numErrors),"processing file: ",tResult.%Get("Name")
+            D $SYSTEM.Status.DisplayError(status.value)
+            W !,"--------------"
+        }
+    }
+]]></Implementation>
+</Method>
+
+<Method name="CleanNamesMidiBinDir">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[dirpathIn:%String,status:Ens.Util.PyByRef,&numErrors=0]]></FormalSpec>
+<Implementation><![CDATA[
+    set tStatement=##class(%SQL.Statement).%New()
+    set tSC=tStatement.%PrepareClassQuery("%Library.File","FileSet")
+    set tResult=tStatement.%Execute(dirpathIn,"*.mid",,1)
+    set status=##class(Ens.Util.PyByRef).%New()
+    while tResult.%Next() {
+        set status.value=""
+        if "D"=tResult.%Get("Type") {
+            Do ..CleanNamesMidiBinDir(tResult.%Get("Name"),status,numErrors)
+            continue
+        }
+        set name=tResult.%Get("Name")
+        set directory=##class(%File).GetDirectory(name)
+        set filename=##class(%File).GetFilename(name)
+        continue:$TRANSLATE(filename,"()[]—")=filename
+        
+        set newFilename=$P(filename,"[")_$P($P(filename,"[",2),"]",2)
+        set newFilename=$Replace(newFilename," — ","_")
+        set newFilename=$Replace(newFilename," .",".")
+        set newFilename=$TR(newFilename,"(){}")
+
+        // Rename
+        D ##class(%File).Rename(##class(%File).Construct(directory,filename),##class(%File).Construct(directory,newFilename))
+    }
+]]></Implementation>
+</Method>
+
+<Method name="ConvertMidiBinToCsv">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>filepathIn:%String,filepathOut:%String,status:Ens.Util.PyByRef</FormalSpec>
+<Language>python</Language>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+    try:
+        import py_midicsv as pm
+    except:
+        status.value=iris.cls("%SYSTEM.Status").Error(5001,"Failed to import python dependency py_midicsv")
+        return 0
+    import iris,traceback,os
+    csv_str=[]
+    if None!=status:
+        status.value=""
+    if os.path.isdir(filepathOut):
+        # get filename without extension
+        tmp_filepathOut,_=os.path.splitext(os.path.basename(filepathIn))
+        # join out directory with new filename
+        # defaults file extension to .txt
+        filepathOut=os.path.join(filepathOut,tmp_filepathOut+'.txt')
+    try:
+        csv_str=pm.midi_to_csv(filepathIn)
+    except:
+        if None==status:
+            return 0
+        status.value=iris.cls("%SYSTEM.Status").Error(5001,"Unable to process MIDI file "+filepathIn+"::"+traceback.format_exc())
+        return 0
+    if len(csv_str)<5:
+        status.value=iris.cls("%SYSTEM.Status").Error(5001,"MIDI file incomplete"+filepathIn)
+        return 0
+    FLD_TYPE=2
+    min_fields=['','','','']
+    try:
+        with open(filepathOut,"w") as csvfile:
+            # create a new midi document object
+            # add stream data
+            # filename format: bandOrartist_albumn_song
+            # if only two pieces use: bandOrartist_song with albumn=unknown
+            # alternative is to use nested directories
+            # source file reference
+            for line in csv_str:
+                # Ensure FLD_TYPE is lowercase for ALL future processing
+                line=line.lower()
+                # remove leading or trailing whitespace between comma delimiter and fields
+                line=','.join([field.strip() for field in line.split(',')])+'\n' # assumes no quoted commas in string
+                csvfile.write(line)
+    except:
+        status.value=iris.cls("%SYSTEM.Status").Error(5001,"Write midicsv::"+traceback.format_exc())
+    return 1
+]]></Implementation>
+</Method>
+
+<Method name="ParseMidiTxtDirToNotes">
+<Description><![CDATA[
+<example>
+Set dirpathIn="/durable/midi_Out"
+Set trainPathOut="/durable/train.txt"
+Set valPathOut="/durable/validate.txt"
+set status=##class(Ens.Util.PyByRef).%New()
+set numErrors=0
+Do ##class(TOOT.Util.Midi).ParseMidiTxtDirToNotes(dirpathIn,trainPathOut,valPathOut,1,status,.numErrors)
+</example>]]></Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[dirpathIn:%String,trainpathOut:%String,valpathOut:%String,append:%Boolean=1,status:Ens.Util.PyByRef,&numErrors=0,&docCount=0]]></FormalSpec>
+<Implementation><![CDATA[
+    // TODO - Add Progress counter
+    set trainRecycle=20 // 19 train to 1 valudate (5%) - due to small train set
+    set tStatement=##class(%SQL.Statement).%New()
+    set tSC=tStatement.%PrepareClassQuery("%Library.File","FileSet")
+    set tResult=tStatement.%Execute(dirpathIn,"*.txt",,1)
+    set status=##class(Ens.Util.PyByRef).%New()
+    while tResult.%Next() {
+        set status.value=""
+        if "D"=tResult.%Get("Type") {
+            Do ..ParseMidiTxtDirToNotes(tResult.%Get("Name"),trainpathOut,valpathOut,append,status,.numErrors,.docCount)
+            continue
+        }
+        set docCount=docCount+1
+        if docCount>trainRecycle,valpathOut'="" {
+            set docCount=0
+            set appendFileName=valpathOut
+        } else {
+            set appendFileName=trainpathOut
+        }
+        if '..ParseMidiTxtToNotes(tResult.%Get("Name"),appendFileName,append,status,.textNotes,.offsetNotes) {
+            W !,"Error ",$I(numErrors),"processing file: ",tResult.%Get("Name")
+            D $SYSTEM.Status.DisplayError(status.value)
+            W !,"--------------"
+        }
+    }
+]]></Implementation>
+</Method>
+
+<Method name="ParseMidiTxtDirToNotesDB">
+<Description>
+Insert calculated tune signatures into database
+Set dirpathIn="/durable/midi_Out"
+set status=##class(Ens.Util.PyByRef).%New()
+set numErrors=0
+Do ##class(TOOT.Util.Midi).ParseMidiTxtDirToNotesDB(dirpathIn,status,.numErrors)</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[dirpathIn:%String,status:Ens.Util.PyByRef,&numErrors=0,&docCount=0]]></FormalSpec>
+<Implementation><![CDATA[
+    set insertCount=0
+    set tStatement=##class(%SQL.Statement).%New()
+    set tSC=tStatement.%PrepareClassQuery("%Library.File","FileSet")
+    set tResult=tStatement.%Execute(dirpathIn,"*.txt",,1)
+    set status=##class(Ens.Util.PyByRef).%New()
+    while tResult.%Next() {
+        set status.value=""
+        if "D"=tResult.%Get("Type") {
+            Do ..ParseMidiTxtDirToNotes(tResult.%Get("Name"),status,.numErrors,.docCount)
+            Set insertCount=insertCount+1
+            W:insertCount#100=0 !,"insertCount:",insertCount
+            W !,"Processed file ",insertCount,". ",tResult.%Get("Name")
+            continue
+        }
+        if '..ParseMidiTxtToNotes(tResult.%Get("Name"),"",0,status,"","") {
+            W !,"Error ",$I(numErrors),"processing file: ",tResult.%Get("Name")
+            D $SYSTEM.Status.DisplayError(status.value)
+            W !,"--------------"
+        }
+    }
+]]></Implementation>
+</Method>
+
+<Method name="ParseMidiTxtToNotes">
+<Description>
+Extract note variation classifications from mid text
+Reused by Production Business Process</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>filepathIn:%String,filepathOut:%String,append:%Boolean,status:Ens.Util.PyByRef,textNotes:Ens.Util.PyByRef,offsetNotes:Ens.Util.PyByRef</FormalSpec>
+<Language>python</Language>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+    import os,traceback,iris
+    if not os.path.exists(filepathIn):
+        if None!=status:
+            status.value=iris.cls("%SYSTEM.Status").Error(5001,"File not found at "+filepathIn)
+        return 0
+    if not os.path.isfile(filepathIn):
+        if None!=status:
+            status.value=iris.cls("%SYSTEM.Status").Error(5001,"Path is not found at "+filepathIn)
+        return 0
+    if os.path.isdir(filepathOut):
+        # get filename without extension
+        tmp_filepathOut,_=os.path.splitext(os.path.basename(filepathIn))
+        # join out directory with new filename
+        # defaults file extension to .txt
+        filepathOut=os.path.join(filepathOut,tmp_filepathOut+'.txt')
+    if ""==textNotes:
+        textNotes=None
+    if ""==offsetNotes:
+        offsetNotes=None
+        
+    FLD_TRACK=0
+    FLD_TIME=1
+    FLD_TYPE=2
+    FLD_CHANNEL=3
+    FLD_NOTE=4
+    FLD_VELOCITY=5
+    min_fields=[0,0,0,0,0,0]
+    track=0
+    # time defaults
+    pulses_per_quarter_note=120
+    microseconds_per_quarter_note=500000
+    gap_in_seconds=0.5 # seconds
+    long_note=0.7 # seconds
+    # 
+    state=0
+    current_track=0
+    skip_in_titles=["drum"] # Filter instrument names that contain in partial words 
+    tracks:dict[int,dict[int,tuple[int,int]]]={}
+    # per track note composition
+    # dict key 1 is start time
+    # for chords and single notes
+    # accumulate 
+    process_note:int
+    process_start:int
+    process_end:int
+
+    process_notes:dict[int,tuple[int,int]]={} # records ( tuple of ) correct note and end time, in start order (key)
+    process_open_notes={} # holds open notes pending end time
+    try:
+        use_title=""
+        with open(filepathIn) as midi_file:
+            lines=midi_file.readlines()
+            for line in lines:
+                line=line.lower()
+                fields=[field.strip() for field in line.split(',')] # assumes no quoted commas in strings
+                if len(fields)<6:
+                    fields.extend(min_fields[len(fields):])
+                if not fields[FLD_TRACK].isnumeric():
+                    continue
+                if not fields[FLD_TIME].isnumeric():
+                    continue
+                fld_track=int(fields[FLD_TRACK])
+                fld_time=int(fields[FLD_TIME])
+                # the start of each track contains metadata
+                if 0==fld_time:
+                    # This will trigger with type=="end_of_file"
+                    if current_track<fld_track or 0==fld_track:
+                        # Flush pending notes
+                        process_open_notes={} # new track, clear previous pending notes
+                        if len(process_notes)>1:
+                            # push notes for track
+                            tracks[current_track]=(process_notes,use_title)
+                            process_notes={}
+                        process_note=None
+                        process_start=None
+                        # assign current_track after update
+                        current_track=fld_track
+                        # check active_notes
+                    if "title_t"==(fields[FLD_TYPE].lower()):
+                        for title in skip_in_titles:
+                            if title in fields[FLD_CHANNEL]:
+                                current_track+=1
+                                # stop at first title match
+                                break
+                        use_title=fields[FLD_CHANNEL]
+                        # Note: The title may be defined in an informational track
+                        #       followed by actual track with no changed title
+                        #       Retain use_title for overlap
+                    if "header"==(fields[FLD_TYPE].lower()) and fields[5].isnumeric():
+                        pulses_per_quarter_note=int(fields[5])
+                    if "tempo"==fields[FLD_TYPE] and fields[FLD_CHANNEL].isnumeric():
+                        microseconds_per_quarter_note=int(fields[FLD_CHANNEL])
+
+                if current_track>fld_track:
+                    # skip ahead to next track
+                    continue
+                # continue unpack
+                fields[FLD_TYPE]=fields[FLD_TYPE].lower()
+                # if moving off possible single note or chord
+                if process_start!=None and process_note!=None and fld_time>process_start:
+                    process_open_notes[process_note]=process_start
+                    process_note=None
+                    process_start=None
+                # end of note
+                if "note_off_c"==fields[FLD_TYPE] or ("note_on_c"==fields[FLD_TYPE] and 0==int(fields[FLD_VELOCITY])):
+                    if not fields[FLD_NOTE].isnumeric():
+                        #print(f"Note off::FLD_NOTE not numeric {fields[FLD_NOTE]}")
+                        continue
+                    # where is the note insert position tracked
+                    note=int(fields[FLD_NOTE])
+                    if note in process_open_notes:
+                        # not processing mutliple channels in one track
+                        # key start time = [ note, endtime ]
+                        process_notes[process_open_notes[note]]=((note,fld_time))
+                        del process_open_notes[note]
+                        # need to insert in order of start time
+                # start of note
+                elif "note_on_c"==fields[FLD_TYPE]:
+                    if not fields[FLD_NOTE].isnumeric():
+                        continue
+                    note=int(fields[FLD_NOTE])
+                    # cater for chords
+                    if None==process_note or process_note<note:
+                        process_note=note
+                        process_start=fld_time
+                    # else preserves previous lower note in chord entry
+                    continue
+                elif "title_t"==fields[FLD_TYPE]:
+                    # TODO - add - Title to track context
+                    pass
+                else:
+                    pass
+            
+            # todo remember to add spacers using process_notes key (start time) and previous all previous end-times
+        # reconcile tracks:dict[int,dict[int,tuple[int,int]]]=[]
+        # The offsets are only relavent to retrevial timings
+        # Is there an informational reason to retain the trak context?
+        seconds_per_tick=microseconds_per_quarter_note/pulses_per_quarter_note/1e6
+
+        tunes:list[tuple[int,str,str]]=[]
+        last_endtime=0 # tracks when the last note ended regardless of when it started
+        # Review time offset
+        # See: https://majicdesigns.github.io/MD_MIDIFile/page_timing.html
+        # See format: https://www.recordingblogs.com/wiki/midi-time-signature-meta-message
+        tune_record_id=0
+        for track in tracks:
+            notes:list[str]=[]
+            offset:list[str]=[] # tracks when a note ended
+            last_note=None
+            last_endtime=0
+            trak_data,use_title=tracks[track]
+            for start_time in trak_data:
+                note,end_time=trak_data[start_time]
+                if len(notes)>0 and ((end_time-last_endtime)*seconds_per_tick)>gap_in_seconds:
+                    # mind the gap
+                    notes.append(str("|_|"))
+                    offset.append(str(start_time-1))
+                if end_time>last_endtime:
+                    last_endtime=end_time
+                # Is this a long or short note?
+                mod_short=1 if ((end_time-start_time)*seconds_per_tick)<long_note else 0
+                if None==last_note:
+                    last_note=note
+                else:
+                    note_diff=0
+                    if note<last_note:
+                        note_diff=note-last_note
+                        if note_diff<-45:
+                            note_diff=-45 # 7 octaves + 2
+                        note_diff=95+(note_diff*2)+mod_short
+                    elif note>last_note:
+                        note_diff=note-last_note
+                        if note_diff>45:
+                            note_diff=45 # 7 octaves + 2
+                        note_diff=97+(note_diff*2)+(1-mod_short)
+                        # max 187
+                    else:
+                        note_diff=96 if 1==mod_short else 97
+                    notes.append(str(note_diff))
+                    offset.append(str(end_time))
+                    last_note=note
+            # validate not all the items in notes
+            if 0==len(notes): # must have more than one note change beyond this point
+                continue
+            nochange_count=0
+            nochange_lead=True
+            nochange_lead_count=0
+            for note_item in notes:
+                if note_item in ['96','97','|_|']:
+                    nochange_count=nochange_count+1
+                    if True==nochange_lead:
+                        nochange_lead_count=nochange_lead_count+1
+                else:
+                    nochange_lead=False
+            # screening drums or other invariant tracks
+            if ((nochange_count/len(notes))>0.75):
+                continue
+            # possible translation artifacts in track
+            if nochange_lead_count>20:
+                continue
+            # Only interested in tracks with more than 10 note changes
+            if len(notes)>10:
+                tunes.append((track,notes,offset,use_title))
+        if None!=filepathOut and ""!=filepathOut:
+            # process and output to file
+            print("process and output to file")
+            with open(filepathOut,("a" if append else "w")) as txt_file:
+                # spanning and padding?
+                for _,notes,_,_ in tunes:
+                    txt_file.write(','.join(notes))
+                    txt_file.write('\n')
+            # end of file
+        elif None!=textNotes:
+            # For online recording there is only one track (the last) with notes to consider 
+            print("Online recording")
+            textNotes.value=','.join(notes[0:1024]) # Will be less than 4050 characters
+            if None!=offsetNotes:
+                offsetNotes.value=','.join()
+        else:
+            # Add to database
+            if 0==tune_record_id:
+                trans_map={ord('_'):ord(' ')}
+                tmp_names=os.path.basename(filepathIn).split('_')
+                if len(tmp_names)<1:
+                    artist_band,tune_name='Unknown','Unknown'
+                elif len(tmp_names)<2:
+                    artist_band,tune_name='Unknown',tmp_names[0].translate(trans_map)
+                else:
+                    artist_band,tune_name=tmp_names[0].translate(trans_map),' '.join(tmp_names[1:]).translate(trans_map)
+                if tune_name.endswith('.txt'):
+                    tune_name=tune_name[0:-4]
+                print(f"artist_band {artist_band}")
+                print(f"tune_name {tune_name}")
+                # Create new parent tune to collect instrument tracks
+                tune_record=iris.cls('TOOT.Data.Tune')._New()
+                tune_record.ArtistOrBand=artist_band
+                tune_record.Name=tune_name
+                save_error=tune_record._Save()
+                if iris.cls('%SYSTEM.Status').IsError(save_error):   
+                    status.value=iris.cls('%SYSTEM.Status').Error(5001,f"Save Tune: {artist_band} {tune_name}::{iris.cls('%SYSTEM.Status').GetOneErrorText(status.value)}")
+                tune_record_id=tune_record._Id()
+            for track,notes,offset,use_title in tunes:
+                if None==notes or 0==len(notes):
+                    # Addressing
+                    # RuntimeError: ERROR #10200: Embedding error: <class 'IndexError'>: index out of range in selftrying to set NoteList in object of type iris.TOOT.Data.Instrument
+                    continue
+                instrument=iris.cls('TOOT.Data.Instrument')._New()
+                instrument.TuneId=tune_record_id
+                instrument.TrackRef=track
+                if None!=use_title:
+                    instrument.Name=use_title
+                notes_len=len(','.join(notes[0:1024]))
+                instrument.NoteList=','.join(notes[0:1024])
+                instrument.OffsetList=','.join(offset[0:1024])
+
+                save_error=instrument._Save()
+                if iris.cls('%SYSTEM.Status').IsError(save_error):
+                    print("Was instrument error")
+                    save_error=iris.cls('%SYSTEM.Status').Error(5001,f"Save Instrument: {artist_band} {tune_name}::{iris.cls('%SYSTEM.Status').GetOneErrorText(save_error)}")
+                    if iris.cls('%SYSTEM.Status').IsError(status.value):
+                        status.value=iris.cls('%SYSTEM.Status').AppendStatus(status.value,save_error)
+                    else:
+                        status.value=save_error
+    except:
+        if None!=status:
+            status.value=iris.cls("%SYSTEM.Status").Error(5001,"Error parsing midi file "+filepathIn+"::"+traceback.format_exc())
+        return 0
+    return 1
+]]></Implementation>
+</Method>
+
+<Method name="ParseVideoRefDB">
+<Description><![CDATA[
+<example>
+Do ##class(TOOT.Util.Midi).ParseVideoRefDB(filename)
+</example>]]></Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>filePathIn:%String</FormalSpec>
+<Implementation><![CDATA[
+    Quit:'##class(%File).Exists(filePathIn)
+    Set txtfile=##class(%Stream.FileCharacter).%New()
+    Do txtfile.LinkToFile(filePathIn)
+    While 'txtfile.AtEnd {
+        Set line=txtfile.ReadLine()
+        Continue:line=""
+        Continue:$L(line,",")>3
+        Set artist=$ZCVT($P(line,","),"L")
+        Continue:artist=""
+        Set title=$ZCVT($P(line,",",2),"L")
+        Set title=$TR(title,"*","%")
+        Set videoUrl=$ZSTRIP($P(line,",",3,99),"<>W")
+        continue:$L(videoUrl)<5
+        &SQL(SELECT COUNT(ID) 
+            INTO :counter
+            FROM TOOT_Data.Tune
+            WHERE LOWER(ArtistOrBand)=:artist
+            AND LOWER(Name) like :title)
+        Continue:SQLCODE'=0
+        continue:counter<1
+        continue:counter>5 // safety margin
+        &SQL(UPDATE TOOT_Data.Tune
+            Set VideoUrl=:videoUrl
+            WHERE LOWER(ArtistOrBand)=:artist
+            AND LOWER(Name) like :title)
+    }
+]]></Implementation>
+</Method>
+
+<Method name="ExtractUnique">
+<Description><![CDATA[
+<example>
+Do ##class(TOOT.Util.Midi).ExtractUnique(10,10)
+</example>]]></Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>shortestMatch:%Integer,longestMatch:%Integer</FormalSpec>
+<Implementation><![CDATA[
+    Set noteList=""
+    &SQL(DECLARE NoteList CURSOR FOR
+        SELECT NoteList
+        INTO :noteList
+        FROM TOOT_Data.Instrument)
+    &SQL(OPEN NoteList)
+    For {
+        &SQL(FETCH NoteList)
+        Quit:SQLCODE'=0
+        // Strip trailing padding if present
+        Set noteList=$Replace(noteList,",0","")
+        Set notelistLen=$L(noteList,",")
+        for matchLength=shortestMatch:1:longestMatch {
+            Set max=notelistLen-matchLength
+            For i=1:1:max {
+                Set extract=$P(noteList,",",i,i+matchLength-1)
+                // Skip sequences ending in gap / pause
+                continue:$P(extract,",",*)="|_|"
+                // Get a count of repetitive nature of pattern
+                Set x=$I(^match(matchLength,extract))
+            }
+        }
+    }
+    &SQL(CLOSE NoteList)
+]]></Implementation>
+</Method>
+
+<Method name="TopExtractCounts">
+<Description><![CDATA[
+<example>
+Do ##class(TOOT.Util.Midi).TopExtractCounts(.counts)
+</example>]]></Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&counts]]></FormalSpec>
+<Implementation><![CDATA[
+    // How many signatures have 20 or 25
+    S k1=""
+    F  {
+        S k1=$O(^match(k1))
+        Q:k1=""
+        S k2=""
+        F {
+            S k2=$O(^match(k1,k2),1,count)
+            Q:k2=""
+            Continue:count<2
+            Continue:count>50
+            S x=$I(counts($L(k2,","),count))
+        }
+    }
+]]></Implementation>
+</Method>
+
+<Method name="SetMatch">
+<Description><![CDATA[
+<example>
+Do ##class(TOOT.Util.Midi).SetMatch(17)
+</example>]]></Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>minCount</FormalSpec>
+<Implementation><![CDATA[
+    S k1=""
+    F  {
+        S k1=$O(^match(k1))
+        Q:k1=""
+        S k2=""
+        F {
+            S k2=$O(^match(k1,k2),1,count)
+            Q:k2=""
+            Continue:count<minCount
+            S ^matchlist(k2)=""
+        }
+    }
+]]></Implementation>
+</Method>
+
+<Method name="ExtractUniqueNext">
+<Description><![CDATA[
+<example>
+Do ##class(TOOT.Util.Midi).ExtractUniqueNext(5,15)
+</example>]]></Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>shortestMatch:%Integer,longestMatch:%Integer</FormalSpec>
+<Implementation><![CDATA[
+    Set noteList=""
+    &SQL(DECLARE NoteList CURSOR FOR
+        SELECT ID,NoteList
+        INTO :instrumentId,:noteList
+        FROM TOOT_Data.Instrument)
+    &SQL(OPEN NoteList)
+    For {
+        &SQL(FETCH NoteList)
+        //W !,"SQLCODE",SQLCODE
+        Quit:SQLCODE'=0
+        // Strip trailing padding if present
+        Set noteList=$Replace(noteList,",0","")
+        Set notelistLen=$L(noteList,",")
+        for matchLength=shortestMatch:1:longestMatch {
+            Set max=notelistLen-matchLength
+            For i=1:1:max {
+                Set extract=$P(noteList,",",i,i+matchLength-1)
+                // Skip sequences ending in gap / pause
+                continue:$P(extract,",",*)="|_|"
+                // Filter by min - max occurance training constraint
+                continue:'$D(^matchlist(extract))
+                // Get a count for selectivity
+                continue:$D(^matchlist(extract,instrumentId))
+                Set x=$I(^matchlist(extract))
+                Set ^matchlist(extract,instrumentId)=""
+            }
+        }
+    }
+    &SQL(CLOSE NoteList)
+]]></Implementation>
+</Method>
+
+<Method name="BuildTestFiles">
+<Description><![CDATA[
+<example>
+Do ##class(TOOT.Util.Midi).BuildTestFiles("/durable/train",10)
+</example>]]></Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>dirOutput,maxRecords=10</FormalSpec>
+<Implementation><![CDATA[
+    NEW $ESTACK
+    K ^processedMatch
+    set valOn=20
+    set fileRollover=0
+    set fileSuffix="train"
+    set extract=""
+    Set numRecords=0
+
+    set sentence1TrainDev=##class(%File).Construct(dirOutput,"sentence1Train.txt")
+    set sentence1ValidateDev=##class(%File).Construct(dirOutput,"sentence1Validate.txt")
+    set sentence2TrainDev=##class(%File).Construct(dirOutput,"sentence2Train.txt")
+    set sentence2ValidateDev=##class(%File).Construct(dirOutput,"sentence2Validate.txt")
+    set countsTrainDev=##class(%File).Construct(dirOutput,"countsTrain.txt")
+    set countsValidateDev=##class(%File).Construct(dirOutput,"countsValidate.txt")
+    set sentenceNoteLists=##class(%File).Construct(dirOutput,"sentenceNoteLists.txt")
+
+    Set $ZTRAP="BuildTestFilesErr"
+    
+    set countsTrainDev=##class(%File).Construct(dirOutput,"countsTrain.txt")
+    F dev=sentence1TrainDev,sentence1ValidateDev,sentence2TrainDev,sentence2ValidateDev,countsTrainDev,countsValidateDev,sentenceNoteLists{
+        Open dev:"AWS":2
+        quit:'$T
+    }
+    G:'$T BuildTestFilesErr
+
+    for {
+        Quit:numRecords>maxRecords
+        set extract=$O(^matchlist(extract))
+        Quit:extract=""
+        set countForSelectivity=+$G(^matchlist(extract))
+        set:countForSelectivity=0 countForSelectivity=1
+        set instrumentId=""
+        for {
+            Quit:numRecords>maxRecords
+            set instrumentId=$O(^matchlist(extract,instrumentId))
+            quit:instrumentId=""
+            set objInstrument=##class(TOOT.Data.Instrument).%OpenId(instrumentId,0)
+            Continue:'$IsObject(objInstrument)
+            // make one positive match
+            
+            // good match for 17 electivty is about 96%
+            Set score=(0.05/countForSelectivity)+(0.05/(countForSelectivity*2))+(0.925)
+
+            Set ^processedMatch(instrumentId,extract,score)=""
+
+            Set numRecords=numRecords+1
+            Quit:numRecords>maxRecords
+
+            
+            For i=1:1:20 {
+                // Don't backtrack on cumulative variation
+                // This stips scores going low with flipping progress
+                // Only Highest score for the shortest route to change, is used later
+                Kill variation Set variation(extract)=""
+                Set fileRollover=fileRollover+1
+                If (fileRollover#valOn)=0{
+                    Set fileRollover=0
+                    Set sentence1Dev=sentence1ValidateDev
+                    Set sentence2Dev=sentence2ValidateDev
+                    Set countsDev=countsValidateDev
+                } Else {
+                    Set sentence1Dev=sentence1TrainDev
+                    Set sentence2Dev=sentence2TrainDev
+                    Set countsDev=countsTrainDev
+                }
+                Set score=0.9
+                Set modList=extract
+
+                if 0=$Random(4) {
+                    Set candidate=modList
+                    if ..JoinLongNote(.candidate),'$D(variation(candidate)) {
+                        Set score=(score-0.15)-(0.5/(countForSelectivity))
+                        Set variation(candidate)=""
+                        Set modList=candidate
+                    }
+                }
+                if 0=$Random(4) {
+                    Set candidate=modList
+                    if ..SplitLongNote(.candidate),'$D(variation(candidate)) {
+                        Set score=(score-0.15)-(0.5/(countForSelectivity))
+                        Set variation(candidate)=""
+                        Set modList=candidate
+                    }
+                }
+                // Longer sequences could train for more note variations
+                for idx=1:1:(1+$L(extract,",")\3) {
+                    if 0=$Random(4) {
+                        Set candidate=modList
+                        Set magnitude=$R(2)
+                        Set direction=$R(2)
+                        if ..VaryOneNote(.candidate,direction,magnitude),'$D(variation(candidate)) {
+                            Set score=(score-(0.15*magnitude))-(0.5/(countForSelectivity))
+                            Set variation(candidate)=""
+                            Set modList=candidate
+                        }
+                    }
+                }
+                if 0=$Random(4) {
+                    Set candidate=modList
+                    if ..DropSpace(.candidate),'$D(variation(candidate)) {
+                        Set score=(score-0.2)-(0.5/(countForSelectivity))
+                        Set variation(candidate)=""
+                        Set modList=candidate
+                    }
+                }
+                if 0=$Random(4) {
+                    Set candidate=modList
+                    if ..AddSpace(.candidate),'$D(variation(candidate)) {
+                        Set score=(score-0.2)-(0.5/(countForSelectivity))
+                        Set variation(candidate)=""
+                        Set modList=candidate
+                    }
+                }
+                
+                // If no random change then skip include duplicate sample
+                continue:modList=extract
+                // If sequence occurs elsewhere in source sequence then skip
+                // Avoid changing exact match for another sequence
+                if objInstrument.NoteList[modList {
+                    // "Skipping modList found in NoteList:",instrumentId
+                    continue
+                }
+
+                If score<0.20 {
+                    Set score=0.20-(0.05/(countForSelectivity))
+                    Set diff=0
+                    for idx=1:1:$L(extract,",") {
+                        if modList'[$P(extract,",",idx) {
+                            set diff=diff+1
+                        }
+                    }
+                    Set:diff>0 score=score-(0.1*(1/diff))
+                    for idx=1:1:$L(modList,",") {
+                        if extract'[$P(modList,",",idx) {
+                            set diff=diff+1
+                        }
+                    }
+                    Set:diff>0 score=score-(0.2-(0.2*(1/(diff+1))))
+                }
+                Set:score<0 score=1e-8
+
+                Set ^processedMatch(instrumentId,modList,score)=""
+
+                Set numRecords=numRecords+1
+                Quit:numRecords>maxRecords
+            }
+        }
+    }
+
+    // Now process only the best scores for variations
+    Set instrumentId=""
+    For {
+        Set instrumentId=$Order(^processedMatch(instrumentId))
+        Quit:instrumentId=""
+        Set modList=""
+        For {
+            Set modList=$O(^processedMatch(instrumentId,modList))
+            Quit:modList=""
+            Set score=$O(^processedMatch(instrumentId,modList,""),-1)
+
+            set fileRollover=fileRollover+1
+            if (fileRollover#valOn)=0{
+                set fileRollover=0
+                S sentence1Dev=sentence1ValidateDev
+                S sentence2Dev=sentence2ValidateDev
+                S countsDev=countsValidateDev
+            } else {
+                S sentence1Dev=sentence1TrainDev
+                S sentence2Dev=sentence2TrainDev
+                S countsDev=countsTrainDev
+            }
+
+            U sentence1Dev W instrumentId,!
+            U sentence2Dev W $$$NoteStartLT_","_modList_","_$$$NoteStopLt,!
+            U countsDev W score,!
+        }
+    }
+    // Output smaller instrument notelist file
+    Set instrumentId=""
+    For {
+        Set instrumentId=$Order(^processedMatch(instrumentId))
+        Quit:instrumentId=""
+        Set objInstrument=##class(TOOT.Data.Instrument).%OpenId(instrumentId,0)
+        Continue:'$IsObject(objInstrument)
+        Use sentenceNoteLists W !,instrumentId,"|",objInstrument.NoteList,!
+    }
+    
+    
+
+BuildTestFilesErr
+    if $ECODE'="" {
+        U 0 WRITE !,"Main $ESTACK= ",$ESTACK   // 0
+        U 0 WRITE !,"Main $ECODE= ",$ECODE
+    }
+    Set $ZTRAP=""
+    Set $ECODE=""
+    F dev=sentence1TrainDev,sentence1ValidateDev,sentence2TrainDev,sentence2ValidateDev,countsTrainDev,countsValidateDev,sentenceNoteLists{
+        Close dev
+    }
+    Use 0
+]]></Implementation>
+</Method>
+
+<Method name="SplitLongNote">
+<Description><![CDATA[
+<example>
+S modList="38,21,45,68,34"
+W ##class(TOOT.Util.Midi).SplitLongNote(.modList)
+</example>]]></Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&modList]]></FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+    // split a long note into two short notes
+    for idx=1:1:$P(modList,",") {
+        set tmp=$P(modList,",",idx)
+        continue:tmp'?1.N
+        if tmp<$$$NoteShortNoChangeTK,tmp#2=1 // ignore short
+        if tmp>$$$NoteLongNoChangeTK,tmp#2=0 // ignore short
+        set pos($I(pos))=idx
+    }
+    Return:'$D(pos) 0
+    // Possible change
+    set pos=$R(pos)+1
+    set idx=pos(pos)
+    set modVal=$P(modList,",",pos)
+    if modVal<$$$NoteShortNoChangeTK {
+        set modVal=modVal+1
+    } else {
+        set modVal=modVal-1
+    }
+    set $P(modList,",",pos)=modVal_","_$$$NoteShortNoChangeTK
+    Return 1
+]]></Implementation>
+</Method>
+
+<Method name="JoinLongNote">
+<Description><![CDATA[
+<example>
+S modList="38,21,45,68,34"
+D ##class(TOOT.Util.Midi).JoinLongNote(.modList) W !,modList
+</example>]]></Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&modList]]></FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+    // Skips following "same" note
+    quit:modList'[$$$NoteShortNoChangeTK 0
+    set prev="",tmp=""
+    for idx=1:1:$L(modList,",") {
+        set prev=tmp
+        set tmp=$P(modList,",",idx)
+        continue:idx=1  //not interested
+        continue:tmp'=$$$NoteShortNoChangeTK
+        continue:prev'?1.N
+        if prev<$$$NoteShortNoChangeTK,prev#2=0 {
+            set pos($I(pos))=idx
+        } elseif prev>$$$NoteLongNoChangeTK,prev#2=1{
+            set pos($I(pos))=idx
+        }
+    }
+    Return:'$D(pos) 0
+    set pos=$R(pos)+1
+    set idx=pos(pos)
+    
+    set note=$P(modList,",",idx-1)
+    if note<$$$NoteShortNoChangeTK {
+        set note=note+1
+    } else {
+        set note=note-1
+    }
+    set $P(modList,",",idx-1,idx)=note
+    Return 1
+]]></Implementation>
+</Method>
+
+<Method name="VaryOneNote">
+<Description><![CDATA[
+Pick a random note change and increase it
+<example>
+S modList="38,21,45,68,34"
+W ##class(TOOT.Util.Midi).VaryOneNote(.modList)
+S modList="38,21,|_|,68,34"
+D ##class(TOOT.Util.Midi).VaryOneNote(.modList) W !,modList
+S modList="97,97,96,97"
+D ##class(TOOT.Util.Midi).VaryOneNote(.modList) W !,modList
+S modList="38,21,45,68,34"
+D ##class(TOOT.Util.Midi).VaryOneNote(.modList,-1) W !,modList
+</example>]]></Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&modList,direction=1,magnitude=1]]></FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+    // Loop to filter out Spacer positions
+    for idx=1:1:$L(modList,",") {
+        set tmp=$P(modList,",",idx)
+        continue:tmp=$$$NoteSpacerLT
+        continue:tmp=$$$NoteMinTK
+        continue:tmp=$$$NoteMaxTK
+        set pos($I(pos))=idx
+    }
+    Return:'$D(pos) 0
+    set pos=$R(pos)+1
+    set idx=pos(pos)
+    set note=$P(modList,",",idx)
+    if note<$$$NoteShortNoChangeTK {
+        if 1=direction {
+            set note=note-(2*magnitude)
+        } else {
+            set note=note+(2*magnitude)
+        }
+    } elseif note>$$$NoteLongNoChangeTK {
+        if 1=direction {
+            set note=note+(2*magnitude)
+        } else {
+            set note=note-(2*magnitude)
+        }
+    } elseif $R(2)=1 {
+        // No change to some change random direction
+        set note=note-(2*magnitude)
+    } else {
+        // No change to some change random direction
+        set note=note+(2*magnitude)
+    }
+    set:note<$$$NoteMinTK note=$$$NoteMinTK
+    set:note>$$$NoteMaxTK note=$$$NoteMaxTK
+    set $P(modList,",",idx)=note
+    return 1
+]]></Implementation>
+</Method>
+
+<Method name="DropSpace">
+<Description><![CDATA[
+Pick a random note and remove one space
+<example>
+S modList="|_|,21,|_|,68,|_|"
+D ##class(TOOT.Util.Midi).DropSpace(.modList) W !,modList
+</example>]]></Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&modList]]></FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+    // Loop to filter out Spacer positions
+    For idx=1:1:$L(modList,",") {
+        Set tmp=$P(modList,",",idx)
+        Continue:tmp'=$$$NoteSpacerLT
+        Set pos($I(pos))=idx
+    }
+    Return:'$D(pos) 0
+    Set pos=$R(pos)+1
+    Set idx=pos(pos)
+    If idx=1 {
+        Set modList=$P(modList,",",2,*)
+    } Elseif idx=$L(modList,",") {
+        Set modList=$P(modList,",",1,*-1)
+    } Else {
+        Set modList=$P(modList,",",1,idx-1)_","_$P(modList,",",idx+1,*)
+    }
+    Return 1
+]]></Implementation>
+</Method>
+
+<Method name="AddSpace">
+<Description><![CDATA[
+Pick a random note and remove one space
+<example>
+S modList="76,49,78,39,57"
+D ##class(TOOT.Util.Midi).AddSpace(.modList) W !,modList
+</example>]]></Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&modList]]></FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+    // Space can only be added between no spaces
+    set prev="",tmp=""
+    for idx=1:1:$L(modList,",") {
+        set prev=tmp
+        set tmp=$P(modList,",",idx)
+        continue:idx=1  //not interested
+        continue:tmp=$$$NoteSpacerLT
+        continue:prev=$$$NoteSpacerLT
+        Set pos($I(pos))=idx
+    }
+    Return:'$D(pos) 0
+    set pos=$R(pos)+1
+    set idx=pos(pos)
+    Set modList=$P(modList,",",1,idx-1)_","_$$$NoteSpacerLT_","_$P(modList,",",idx,*)
+    Return 1
+]]></Implementation>
+</Method>
+
+<Method name="Test">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>notes:%String</FormalSpec>
+<Implementation><![CDATA[
+    &SQL(DECLARE test CURSOR FOR
+        SELECT TOP 5 tune.ArtistOrBand, tune.Name,
+        VECTOR_DOT_PRODUCT(instrument.NoteListEmbedding, EMBEDDING(:notes1,'toot-v2-config')) As Similarity
+        INTO :band,:name,:similarity
+            FROM TOOT_Data.Tune tune,TOOT_Data.Instrument instrument
+            WHERE tune.Id=instrument.TuneId
+            ORDER BY Similarity DESC,ArtistOrBand,Name)
+    &SQL(OPEN test)
+    For {
+        &SQL(FETCH test)
+        Q:SQLCODE'=0
+        W !,"Band=",band,"; name=",name,"; similarity=",similarity
+    }
+    &SQL(CLOSE test)
+]]></Implementation>
+</Method>
+</Class>
+</Export>

@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="IRIS" version="26">
+<Class name="TOOT.EncodeOpus">
+<Description>
+Given a WAV filename, return a comma seperated note list
+TODO - Try / Catch handling</Description>
+<Super>Ens.BusinessProcessBPL</Super>
+<TimeCreated>67286,21440.486017446</TimeCreated>
+
+<XData name="BPL">
+<Description>
+BPL Definition</Description>
+<XMLNamespace>http://www.intersystems.com/bpl</XMLNamespace>
+<Data><![CDATA[
+<process language='objectscript' request='Ens.StringRequest' response='Ens.StringResponse' height='2000' width='2000' >
+<pyFromImport>
+import sys,os
+import librosa
+from sound_to_midi.monophonic import wave_to_midi
+</pyFromImport>
+<context>
+<property name='Notes' type='%String' instantiate='0' >
+<annotation><![CDATA[Comma seperated list of note sequence extracted.
+(3 chars + 1 comma) * 1024 max tokens == less than 4100 characters.]]]]><![CDATA[></annotation>
+<parameters>
+<parameter name='MAXLEN'  value='4100' />
+</parameters>
+</property>
+<property name='Job' type='%Integer' initialexpression='$Job' instantiate='0' />
+<property name='pathPrefix' type='%String' instantiate='0' >
+<parameters>
+<parameter name='MAXLEN'  value='50' />
+</parameters>
+</property>
+</context>
+<sequence xend='200' yend='750' >
+<code name='Convert Opus to Midi' xpos='200' ypos='250' >
+<![CDATA[ set oldDir=##class(%SYSTEM.Process).CurrentDirectory()
+ set newDir=##class(%File).GetDirectory(request.StringValue)
+ set fileprefix=$P(##class(%File).GetFilename(request.StringValue),".",1,*-1)
+ Do ##class(%SYSTEM.Process).CurrentDirectory(newDir)
+ Set context.pathPrefix=newDir_fileprefix
+ Set tSC=$zf(-100,"/SHELL /STDOUT="_fileprefix_".log /STDERR="_fileprefix_".log","ffmpeg","-y","-i",request.StringValue,context.pathPrefix_".wav")
+ Set data=""
+ Set file=##class(%Stream.FileCharacter).%New()
+ Do file.LinkToFile(context.pathPrefix_".log")
+ try {
+   Set data=file.Read()
+ } catch {}
+ Do ##class(%File).Delete(context.pathPrefix_".log")
+ if tSC=0 {
+   $$$LOGINFO(data)
+ } else {
+   set status=$SYSTEM.Status.Error(5001,data)
+ }
+ Do ##class(%SYSTEM.Process).CurrentDirectory(oldDir)
+ ]]]]><![CDATA[>
+</code>
+<trace name='Completed Convert Opus to Midi' value='"Completed Convert Opus to Midi"' xpos='200' ypos='350' />
+<code name='Convert Midi to Notes' languageOverride='python' xpos='200' ypos='450' >
+<![CDATA[# Max token size is 1024
+# SO are OK with string in context
+wave_to_midi
+file_in=f"{context.pathPrefix}.wav"
+file_out=f"{context.pathPrefix}.mid"
+y,sr=librosa.load(file_in,sr=None)
+midi=wave_to_midi(y,srate=sr)
+with open(file_out,'wb') as f:
+  midi.writeFile(f)
+  
+]]]]><![CDATA[>
+</code>
+<code name='Get Encoding' languageOverride='python' xpos='200' ypos='550' >
+<![CDATA[import py_midicsv as pm
+# convert Binary Midi to Text Midi
+file_bin=f"{context.pathPrefix}.mid"
+file_txt=f"{context.pathPrefix}.txt"
+csv_str=pm.midi_to_csv(file_bin)
+with open(file_txt,"w") as txt_file:
+  for line in csv_str:
+    txt_file.write(line)
+    txt_file.write('\n')
+  
+# Extract Note changes
+text_notes=iris.cls('Ens.Util.PyByRef')._New()
+if not iris.cls('TOOT.Util.Midi').ParseMidiTxtToNotes(file_txt,"",0,status,text_notes,""):
+  status.value=iris.cls('%SYSTEM.Status').Error(5001,"Problem in ParseMidiTxtToNotes")
+  return
+
+response.StringValue=text_notes.value]]]]><![CDATA[>
+</code>
+<code name='Tidy Up' languageOverride='python' xpos='200' ypos='650' >
+<![CDATA[for extension in ['webm','wav','mid','txt']:
+  os.remove(f"{context.pathPrefix}.{extension}")]]]]><![CDATA[>
+</code>
+</sequence>
+</process>
+]]></Data>
+</XData>
+
+<Storage name="Default">
+<Type>%Storage.Persistent</Type>
+</Storage>
+</Class>
+</Export>

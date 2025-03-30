@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="IRIS" version="26">
+<Class name="TOOT.Data.Embedding2">
+<Super>%Embedding.Interface</Super>
+<TimeCreated>67292,75101.688043472</TimeCreated>
+
+<Method name="Embedding">
+<Description><![CDATA[
+Abstract method to retrieve embeddings. To be implemented by subclass of %Embedding
+Would prefer neutral data type instead of string for input
+A list is more compact for the stored column
+Not interested in Dynamically downloading a new model or updating existing
+from this context
+<example>
+s tstr="56,56"
+s config={"modelName":"toot-v2","modelPath":"/durable/models/toot2/","tokenizerPath":"/durable/models/toot/tokenizer_config.json","HotStart":0}.%ToJSON()
+s vec=##class(TOOT.Data.Embedding2).Embedding(tstr,config)
+</example>]]></Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>input:%String,configuration:%String</FormalSpec>
+<ReturnType>%Vector</ReturnType>
+<Implementation><![CDATA[
+    // enforce truncation
+    if $L(input,",")>1024 {
+        Set input=$P(input,",",1,1024)
+    }
+    
+    set ^tracker($I(^tracker),"d")=$E(input,1,32000)
+    Set config=[].%FromJSON(configuration)
+    Quit:config.%Get("modelName")="" ##class(%Library.Vector).DisplayToLogical("")
+    
+    Set model=""
+    Set modelV=##class(Ens.Util.PyByRef).%New()
+    If (config.%Get("HotStart",0))&&(config.%Get("modelName")=$G(%model("Toot","modelName"))) {
+        // Reusing model
+        Set model=$G(%model("Toot"))
+        Set modelV.value=model
+    }
+
+    If model="" {
+        Do ..LoadModelPy(config.%Get("modelPath"),config.%Get("tokenizerPath"),modelV)
+        Set model=modelV.value
+        if config.%Get("HotStart",0) {
+            // Preserving model reference between invocations
+            Set %model("Toot","modelName")=config.%Get("modelName")
+            Set %model("Toot")=model
+        }
+    }
+
+    try {
+        set config = [].%FromJSON(configuration)
+        set inputData = $SELECT($ISOBJECT(input)=1:input.%ToJSON(), 1:input)
+        set embeddingsPy = ..EmbeddingPy(inputData_"", modelV)
+        // TODO - preserve off?
+        return ##class(%Library.Vector).DisplayToLogical(embeddingsPy)
+    } catch e {
+        set ^tracker($I(^tracker),"e")=e.Data
+        $$$ThrowStatus($$$ERROR(5001,e.Data))
+        $$$ThrowStatus($$$ERROR($$$EmbeddingGeneralError,e.Data))
+    }
+]]></Implementation>
+</Method>
+
+<Method name="EmbeddingPy">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>tokenString,model:Ens.Util.PyByRef</FormalSpec>
+<Language>python</Language>
+<Implementation><![CDATA[
+    embeddings=model.value.encode(tokenString)
+    # Debug to check shape of embedding being returned
+    #print(f"embeddings len {len(list(embeddings))}")
+    #print(f"embeddings len {len(embeddings[0])}")
+    return str(embeddings.tolist())
+]]></Implementation>
+</Method>
+
+<Method name="LoadModelPy">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>dirPathModel,filePathTokenizer,model:Ens.Util.PyByRef</FormalSpec>
+<Language>python</Language>
+<Implementation><![CDATA[
+    from sentence_transformers import models, SentenceTransformer
+    from tokenizers import Tokenizer
+    from transformers import PreTrainedTokenizerFast
+    import torch
+
+    # has path dir like: '/durable/models/toot2/'
+    transformer = models.Transformer(dirPathModel)
+    tokenizer=Tokenizer.from_file(filePathTokenizer)
+    # checking if oversized is causing issue
+    tokenizer.enable_truncation(max_length=1024, stride=0, strategy='longest_first', direction='right')
+    fast_tokenizer = PreTrainedTokenizerFast(tokenizer_object=tokenizer)
+    fast_tokenizer.pad_token='[PAD]'
+    
+    transformer.tokenizer=fast_tokenizer
+    pooling = models.Pooling(transformer.get_word_embedding_dimension(), pooling_mode="mean")
+    model.value = SentenceTransformer(modules=[transformer, pooling])
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if 'cpu'!=device:
+        model.value.to(device)
+]]></Implementation>
+</Method>
+
+<Method name="IsValidConfig">
+<Description>
+Abstract method to validate configuration. To be implemented by subclass of %Embedding</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[config:%DynamicObject,&errorMsg:%String]]></FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+    // Validate Model is available
+    if ('$D(config)) {
+        set errorMsg = "'config' not supplied"
+        return 0
+    }
+    if (config.%Get("modelName") = "") {
+        set errorMsg = "'modelName' not set"
+        return 0
+    }
+    if (config.%Get("modelPath") = "") {
+        set errorMsg = "'modelPath' not set"
+        return 0
+    }
+    if (config.%Get("tokenizerPath") = "") {
+        set errorMsg = "'tokenizerPath' not set"
+        return 0
+    }
+    Quit 1
+]]></Implementation>
+</Method>
+</Class>
+</Export>
