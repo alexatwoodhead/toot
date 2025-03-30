@@ -9,7 +9,7 @@ A conversation with a colleague could be:
 > "Hey what was that tune earlier?
 > The one that went "do do dee doo da"?
 
-Instead of text input, can we explore "Sound" as input, and in a novel way use IRIS new AI search capabilities to achieve this?
+Instead of text input, can we explore "Sound" as input, and in a novel way apply new IRIS AI search powers to achieve this?
 
 # The Interface
 The [TOOT](https://localhost/iris/csp/toot/TOOT.Web.Button.cls) interface consists of a button.
